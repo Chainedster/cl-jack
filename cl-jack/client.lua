@@ -1,28 +1,17 @@
 local inJackZone = false
 
+local isShowing = false
+local isHugging = false
+
 local jack_car = nil
 local car_model = GetHashKey('ageraone')
 local car_coords = vector4(-1796.09, 455.27, 127.95, 89.47)
 
 local jack_ped = nil
 local jack_coords = vector4(-1801.41, 450.85, 128.51, 3.13)
+local jack_coords3 = vector3(jack_coords.x, jack_coords.y, jack_coords.z)
 
 local hug_coords = vector4(-1801.44, 451.71, 127.52, 183.13)
-
-local render_zone = {
-    vector2(-1861.39, 440.65),
-    vector2(-1846.14, 494.46),
-    vector2(-1770.56, 492.27),
-    vector2(-1753.06, 419.36),
-}
-
-CreateThread(function()
-    exports["PolyZone"]:AddPolyZone("cl-jack", render_zone, {
-        minZ = 126.20,
-        maxZ = 142.03,
-        -- debugPoly = true,
-    })
-end)
 
 local function LoadAnim(dict)
     while not HasAnimDictLoaded(dict) do
@@ -74,23 +63,11 @@ local function CreateJackPed()
     SetClothes(jack_ped)
     GiveWeaponToPed(jack_ped, GetHashKey('WEAPON_ASSAULTRIFLE'), 1, true, true)
     
-    DecorSetInt(jack_ped, "Ped.DrugBlocker", true)
     ClearPedTasks(jack_ped)
-    ClearPedSecondaryTask(jack_ped)
-    TaskSetBlockingOfNonTemporaryEvents(jack_ped, true)
-    SetPedFleeAttributes(jack_ped, 0, 0)
-    SetPedCombatAttributes(jack_ped, 17, 1)
-    SetPedAlertness(jack_ped, 0)
-    SetEntityInvincible(jack_ped, true)
-    SetPedSeeingRange(jack_ped, 0.0)
-    SetPedHearingRange(jack_ped, 0.0)
-    SetPedShouldPlayFleeScenarioExit(jack_ped, 0, 0, 0)
-    SetPedAlertness(jack_ped, 0)
-    SetPedKeepTask(jack_ped, true)
-    CanPedRagdoll(jack_ped)
-    SetPedConfigFlag(jack_ped, 294, 1)
     SetPedCanLosePropsOnDamage(jack_ped, false, 0)
     FreezeEntityPosition(jack_ped, true)
+    SetEntityInvincible(jack_ped, true)
+    SetBlockingOfNonTemporaryEvents(jack_ped, true)
     TaskStartScenarioInPlace(jack_ped, "WORLD_HUMAN_GUARD_STAND", 0, true) 
 end
 
@@ -119,8 +96,6 @@ local function SpawnJackCar()
     SetEntityInvincible(jack_car, true)
 end 
 
-local isShowing = false
-local isHugging = false
 local function handleJackFocker()
     while true do 
         local playerPed = PlayerPedId()
@@ -135,19 +110,9 @@ local function handleJackFocker()
             exports["cl_ui_interaction"]:hideInteraction()
         end
 
-        if IsControlJustPressed(0, 38) and dist < 1.5 and isHugging == false then -- Pressed E
-            TriggerServerEvent('Klownzz:Hug')
+        if IsControlJustPressed(0, 38) and dist < 1.5 and isHugging == false and not IsPedInAnyVehicle(playerPed, false) then -- Pressed E
+                TriggerServerEvent('Klownzz:Hug')
         end
-
-        if jack_ped ~= nil then
-            if IsPedFleeing(jack_ped) then
-                LoadAnim("mp_ped_interaction")
-                TaskSetBlockingOfNonTemporaryEvents(jack_ped, true)
-                SetPedConfigFlag(jack_ped, 294, 1)
-                SetEntityCoords(jack_ped, jack_coords.x, jack_coords.y, jack_coords.z-1, 324.7266, false, true, false, false)
-                TaskStartScenarioInPlace(jack_ped, "WORLD_HUMAN_GUARD_STAND", 0, true)
-            end
-        end    
 
         if inJackZone == false then
             if isShowing then
@@ -165,7 +130,7 @@ AddEventHandler('Klownzz:HandleHug', function(who)
     LoadAnim("mp_ped_interaction")
 
     if who == 'jack' then
-        SetEntityCoords(jack_ped, jack_coords.x, jack_coords.y, jack_coords.z-1, 324.7266, false, true, false, false)
+        SetEntityCoords(jack_ped, jack_coords.x, jack_coords.y, jack_coords.z-1, false, true, false, false)
         DoHugAnimation(jack_ped)
 		TriggerServerEvent('InteractSound_SV:PlayWithinDistance', 6.0, 'Jack-Dying-Laughing', 0.4)	
     elseif who == 'self' then
@@ -184,37 +149,41 @@ AddEventHandler('Klownzz:HandleHug', function(who)
     end
 end)
 
-AddEventHandler("cl-polyzone:enter", function(zone, data)
-    if zone ~= 'cl-jack' then return end
-    if inJackZone == true then return end
+CreateThread(function()
+    while true do
+        local playerCoords = GetEntityCoords(PlayerPedId())
+        local dist = #(jack_coords3 - playerCoords)
+        
+        if not inJackZone and dist <= 100 then
+            
+            if not jack_ped then
+                CreateJackPed()
+            end
+        
+            if not jack_car then
+                SpawnJackCar()
+            end
+        
+            inJackZone = true
+        
+            CreateThread(handleJackFocker)
+            TriggerServerEvent('Klownzz:EnteredZone')
+        elseif inJackZone and dist > 100 then
+            if jack_ped then
+                DeleteEntity(jack_ped)
+                jack_ped = nil
+            end
+            
+            if jack_car then
+                DeleteEntity(jack_car)
+                jack_car = nil
+            end
 
-    if not jack_ped then
-        CreateJackPed()
+            inJackZone = false
+            TriggerServerEvent('Klownzz:ExitedZone')
+        end
+
+        Wait(2000)
     end
 
-    if not jack_car then
-        SpawnJackCar()
-    end
-
-    inJackZone = true
-
-    CreateThread(handleJackFocker)
-    TriggerServerEvent('Klownzz:EnteredZone')
-end)
-  
-AddEventHandler("cl-polyzone:exit", function(zone, data)
-    if zone ~= 'cl-jack' then return end
-    
-    if jack_ped then
-        DeleteEntity(jack_ped)
-        jack_ped = nil
-    end
-    
-    if jack_car then
-        DeleteEntity(jack_car)
-        jack_car = nil
-    end
-
-    inJackZone = false
-    TriggerServerEvent('Klownzz:ExitedZone')
 end)
